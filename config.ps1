@@ -371,27 +371,27 @@ Configurado em: $configuredAt
 
     Write-Host "[5/5] Senha permanente configurada com sucesso!" -ForegroundColor Green
 
-    # 8. Disparo Assincrono ao Make.com
-    if ($WebhookUrl -match '^https://') {
+    # 8. Disparo ao Webhook do Make.com (Apos geracao do arquivo txt)
+    if ($WebhookUrl -match '^https?://') {
+        Write-Host "[5/5] Notificando integracao no Make.com..." -ForegroundColor Yellow
         try {
             $payload = @{
-                ferramenta = 'HopToDesk'
-                aplicativo = 'HopToDesk'
-                app = 'HopToDesk'
-                parceiro = $partner
-                computador = $label
-                id = $remoteId
-                senha = $password
+                ferramenta    = 'HopToDesk'
+                aplicativo    = 'HopToDesk'
+                app           = 'HopToDesk'
+                parceiro      = $partner
+                computador    = $label
+                id            = $remoteId
+                senha         = $password
                 textoCompleto = $record
             }
             $jsonPayload = $payload | ConvertTo-Json -Depth 3
-            $null = [System.Threading.ThreadPool]::QueueUserWorkItem({
-                param($info)
-                try {
-                    Invoke-RestMethod -Uri $info.Url -Method Post -Body $info.Body -ContentType 'application/json' -TimeoutSec 5 -ErrorAction SilentlyContinue
-                } catch {}
-            }, @{ Url = $WebhookUrl; Body = $jsonPayload })
-        } catch { }
+            $utf8Bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonPayload)
+            $null = Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $utf8Bytes -ContentType 'application/json; charset=utf-8' -TimeoutSec 10
+            Write-Host "[5/5] Integracao Make.com notificada com sucesso!" -ForegroundColor Green
+        } catch {
+            Write-Host "[Aviso] Nao foi possivel sincronizar com Make.com: $($_.Exception.Message)" -ForegroundColor DarkYellow
+        }
     }
 
     try { Set-Clipboard -Value $record } catch {}
