@@ -1,5 +1,5 @@
 # Script de instalacao direta de Suporte Remoto via Web
-# Uso rapido: irm https://raw.githubusercontent.com/<usuario>/Suporte-Remoto/main/instalar.ps1 | iex
+# Uso rapido: irm https://raw.githubusercontent.com/leonvrdx/Suporte-Remoto/main/instalar.ps1 | iex
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms

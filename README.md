@@ -1,41 +1,41 @@
-# Instalador Suporte Remoto (RustDesk & HopToDesk)
+# Suporte Remoto (RustDesk & HopToDesk)
 
-Solução automatizada e autônoma para distribuição de suporte remoto a clientes e parceiros com configuração automática de ID, senha permanente e integração com Webhook (Make.com).
-
-## 🚀 Como Usar no Cliente
-
-Basta enviar o arquivo único:
-- **`Instalador Suporte Remoto.exe`** (~34.7 MB)
-
-O cliente simplesmente dá dois cliques no arquivo:
-1. O Windows solicita permissão de Administrador (UAC nativo).
-2. O cliente escolhe a ferramenta (**RustDesk** recomendado ou **HopToDesk** alternativo).
-3. Informa o nome do parceiro/cliente e o identificador do computador.
-4. Por padrão, a instalação é **100% offline** (utiliza os instaladores embutidos no `.exe`, sem depender de internet para baixar o pacote inicial e sem chance de erro 404). Caso desejado, há a opção de marcar para buscar a versão mais recente na web.
-5. Em poucos segundos, o aplicativo é instalado silenciosamente, o serviço do Windows é iniciado, o ID de acesso é sincronizado, a senha permanente é gerada e aplicada, e os dados são:
-   - Salvos em um arquivo `.txt` na Área de Trabalho do cliente.
-   - Copiados para a Área de Transferência.
-   - Abertos no Bloco de Notas.
-   - Enviados automaticamente para o Webhook do Make.com configurado (com o nome dinâmico da ferramenta).
+Instalação e configuração automatizada de suporte remoto para clientes e parceiros (HopToDesk e RustDesk), com sincronização de ID, senha permanente e notificação em tempo real via Webhook (Make.com).
 
 ---
 
-## 🛠️ Estrutura do Projeto
+## ⚡ Instalação Rápida via Web (Sem Bloqueio de Segurança)
 
-- **`Instalador Suporte Remoto.exe`**: Executável final pronto para envio ao cliente.
-- **`build.cmd`**: Atalho em lote para recompilar o `.exe` com um clique duplo.
-- **`build.ps1`**: Script que invoca o compilador nativo do Windows (`csc.exe`).
-- **`src\Program.cs`**: Código-fonte C# da interface Windows Forms e automação do suporte.
-- **`src\app.manifest`**: Manifesto de elevação nativa com UAC (`requireAdministrator`).
-- **`build\resources\`**: Contém os instaladores oficiais de base compactados dentro do executável (`RustDesk.exe` e `HopToDesk.exe`).
+Para instalar em qualquer computador Windows sem baixar arquivos na Área de Trabalho e sem ser barrado pelo Smart App Control do Windows 11:
+
+Abra o **PowerShell como Administrador** e cole o comando:
+```powershell
+irm https://raw.githubusercontent.com/leonvrdx/Suporte-Remoto/main/instalar.ps1 | iex
+```
 
 ---
 
-## 🔄 Como Atualizar os Instaladores Embutidos no Futuro
+## 💻 Instalação Local (Dois Cliques)
 
-Se desejar atualizar as versões dos instaladores que vêm dentro do `.exe`:
-1. Substitua os arquivos dentro da pasta `build\resources\`:
-   - `build\resources\RustDesk.exe`
-   - `build\resources\HopToDesk.exe`
-2. Dê dois cliques no arquivo **`build.cmd`** (ou execute `.\build.ps1` no PowerShell).
-3. O novo `Instalador Suporte Remoto.exe` será gerado automaticamente.
+Basta enviar a pasta ou o atalho para o cliente:
+- Execute **`Instalador Suporte Remoto.cmd`**
+
+O script:
+1. Solicita privilégios de Administrador.
+2. Abre a interface para escolher entre **RustDesk** ou **HopToDesk**.
+3. Coleta o nome do parceiro e identifica a máquina.
+4. Baixa o instalador oficial diretamente das CDNs oficiais (com fallbacks resilientes).
+5. Instala silenciosamente, inicia o serviço e recupera o ID.
+6. Gera uma senha forte alfanumérica permanente e configura as permissões de acesso.
+7. Dispara os dados via JSON para o Webhook do Make.com.
+8. Salva o `.txt` na Área de Trabalho, copia os dados para a Área de Transferência e abre no Bloco de Notas.
+
+---
+
+## 📁 Estrutura do Repositório
+
+- **`instalar.ps1`**: Script web para execução em linha única (`irm ... | iex`).
+- **`config.ps1`**: Script principal de instalação e integração.
+- **`Instalador Suporte Remoto.cmd`**: Disparador local rápido para clientes.
+- **`src/Program.cs`** e **`src/app.manifest`**: Código-fonte do executável C# nativo.
+- **`build.cmd`** e **`build.ps1`**: Scripts para compilação local via `csc.exe`.
