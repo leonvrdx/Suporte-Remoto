@@ -347,6 +347,14 @@ try {
     Start-Sleep -Seconds 1
     $form.Close()
 
+    Write-Host ""
+    Write-Host "==========================================================" -ForegroundColor Cyan
+    Write-Host "  Iniciando configuracao do $($script:AppConfig.Name)" -ForegroundColor Cyan
+    Write-Host "  Parceiro: $partner | Computador: $label" -ForegroundColor Gray
+    Write-Host "==========================================================" -ForegroundColor Cyan
+    Write-Host "[1/5] Download oficial concluido com sucesso!" -ForegroundColor Green
+    Write-Host "[2/5] Instalando silenciosamente em segundo plano..." -ForegroundColor Yellow
+
     # 5. Instalacao Silenciosa Unica
     $installProc = Start-Process -FilePath $installer -ArgumentList '--silent-install' -WindowStyle Hidden -PassThru
     if (-not $installProc.WaitForExit(90000)) {
@@ -370,11 +378,17 @@ try {
     }
     $script:AppExe = $installedExe
 
+    Write-Host "[2/5] Aplicativo instalado com sucesso!" -ForegroundColor Green
+    Write-Host "[3/5] Iniciando servico do Windows..." -ForegroundColor Yellow
+
     # Garante inicializacao do servico do Windows
     try {
         Set-Service -Name $script:AppConfig.ServiceName -StartupType Automatic -ErrorAction SilentlyContinue
         Start-Service -Name $script:AppConfig.ServiceName -ErrorAction SilentlyContinue
     } catch {}
+
+    Write-Host "[3/5] Servico do Windows pronto!" -ForegroundColor Green
+    Write-Host "[4/5] Conectando a rede para gerar o ID de acesso..." -ForegroundColor Yellow
 
     # 6. Obtencao do ID e Configuracao de Senha
     $remoteId = ''
@@ -430,6 +444,9 @@ STATUS: INSTALACAO CONCLUIDA, MAS A REDE DEMOROU PARA GERAR O ID.
         exit 1
     }
 
+    Write-Host "[4/5] ID gerado com sucesso: $remoteId" -ForegroundColor Green
+    Write-Host "[5/5] Configurando senha permanente e permissoes de seguranca..." -ForegroundColor Yellow
+
     $password = Get-RandomPassword
     $configuredAt = Get-Date -Format 'dd/MM/yyyy HH:mm:ss zzz'
     $record = @"
@@ -450,6 +467,8 @@ Configurado em: $configuredAt
         $null = Invoke-RemoteApp -ExePath $script:AppExe -Arguments @('--option', 'allow-remote-config-modification', 'Y') -TimeoutSeconds 5
         $null = Invoke-RemoteApp -ExePath $script:AppExe -Arguments @('--password', $password) -TimeoutSeconds 5
     } catch {}
+
+    Write-Host "[5/5] Senha permanente configurada com sucesso!" -ForegroundColor Green
 
     # Dispara dados para o Webhook do Make.com de forma assincrona/rapida
     if ($WebhookUrl -match '^https://') {
@@ -478,6 +497,16 @@ Configurado em: $configuredAt
     try { Set-Clipboard -Value $record } catch {}
 
     Start-Process -FilePath "$env:SystemRoot\System32\notepad.exe" -ArgumentList ('"' + $output + '"')
+
+    Write-Host ""
+    Write-Host "==========================================================" -ForegroundColor Green
+    Write-Host "  ACESSO REMOTO CONFIGURADO COM SUCESSO!" -ForegroundColor Green
+    Write-Host "  ID: $remoteId" -ForegroundColor White
+    Write-Host "  Senha: $password" -ForegroundColor White
+    Write-Host "  Dados salvos no Bloco de Notas e na Area de Trabalho." -ForegroundColor Gray
+    Write-Host "==========================================================" -ForegroundColor Green
+    Write-Host ""
+
     Show-Info "Configuracao concluida com sucesso!`r`n`r`nOs dados foram copiados para a Area de Transferencia e abertos no Bloco de Notas." "Information"
 
     Remove-Item -LiteralPath $downloadFolder -Recurse -Force -ErrorAction SilentlyContinue
