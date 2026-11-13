@@ -4,38 +4,39 @@ Instalação e configuração automatizada de suporte remoto para clientes e par
 
 ---
 
-## ⚡ Instalação Rápida via Web (Sem Bloqueio de Segurança)
+## ⚡ Método 1: Instalação Direta via Web (Recomendado - 1 Linha)
 
-Para instalar em qualquer computador Windows sem baixar arquivos na Área de Trabalho e sem ser barrado pelo Smart App Control do Windows 11:
+Para instalar em qualquer computador Windows sem precisar baixar arquivos e livre de bloqueios do Windows 11:
 
-Abra o **PowerShell como Administrador** e cole o comando:
+Abra o **PowerShell como Administrador** e execute:
 ```powershell
 irm https://raw.githubusercontent.com/leonvrdx/Suporte-Remoto/main/instalar.ps1 | iex
 ```
 
 ---
 
-## 💻 Instalação Local (Dois Cliques)
+## 📦 Método 2: Instalação via Pacote ZIP (Dois Cliques)
 
-Basta enviar a pasta ou o atalho para o cliente:
-- Execute **`Instalador Suporte Remoto.cmd`**
-
-O script:
-1. Solicita privilégios de Administrador.
-2. Abre a interface para escolher entre **RustDesk** ou **HopToDesk**.
-3. Coleta o nome do parceiro e identifica a máquina.
-4. Baixa o instalador oficial diretamente das CDNs oficiais (com fallbacks resilientes).
-5. Instala silenciosamente, inicia o serviço e recupera o ID.
-6. Gera uma senha forte alfanumérica permanente e configura as permissões de acesso.
-7. Dispara os dados via JSON para o Webhook do Make.com.
-8. Salva o `.txt` na Área de Trabalho, copia os dados para a Área de Transferência e abre no Bloco de Notas.
+Para enviar o instalador pronto para o cliente:
+1. Baixe ou envie o arquivo **`Suporte-Remoto.zip`** (apenas ~7 KB).
+2. Extraia os arquivos.
+3. Dê dois cliques em **`Instalador Suporte Remoto.cmd`**.
 
 ---
 
-## 📁 Estrutura do Repositório
+## 🛠️ Recursos Integrados
 
-- **`instalar.ps1`**: Script web para execução em linha única (`irm ... | iex`).
-- **`config.ps1`**: Script principal de instalação e integração.
-- **`Instalador Suporte Remoto.cmd`**: Disparador local rápido para clientes.
-- **`src/Program.cs`** e **`src/app.manifest`**: Código-fonte do executável C# nativo.
-- **`build.cmd`** e **`build.ps1`**: Scripts para compilação local via `csc.exe`.
+* **Zero Erro 404**: Download direto oficial com fallbacks automáticos em cascata.
+* **Compatibilidade 32 e 64 bits**: Detecção dinâmica de instalação em `Program Files` e `Program Files (x86)`.
+* **Segurança e Senhas Fortes**: Senha permanente alfanumérica inequívoca (sem caracteres que quebram terminais ou teclados) e ativação de acesso não supervisionado.
+* **Feedback em Tempo Real**: Progresso narrado passo a passo na tela do terminal.
+* **Integração Make.com**: Notificação assíncrona automática com envio dinâmico do nome do aplicativo (`ferramenta`, `aplicativo` e `app`).
+
+---
+
+## 📁 Estrutura dos Arquivos
+
+* **`instalar.ps1`**: Script web para execução em linha única (`irm ... | iex`).
+* **`config.ps1`**: Script principal de instalação local.
+* **`Instalador Suporte Remoto.cmd`**: Disparador local por lote (dois cliques).
+* **`Suporte-Remoto.zip`**: Pacote compactado oficial para distribuição rápida.

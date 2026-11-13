@@ -1,7 +1,10 @@
-# Binarios compactados locais e temporarios
-*.rar
-*.zip
+# Temporarios e logs
+*.exe
 *.old.exe
 *.log
 *.tmp
 *.pdb
+*.rar
+
+# Manter o pacote zip oficial para distribuicao aos clientes
+!Suporte-Remoto.zip
