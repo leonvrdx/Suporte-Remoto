@@ -93,6 +93,38 @@ function Get-RandomPassword {
     return -join ((1..10) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
 }
 
+function Create-DesktopShortcut([string]$TargetExe, [string]$ShortcutName = 'HopToDesk', [string]$UserDesktop = '') {
+    try {
+        $wsh = New-Object -ComObject WScript.Shell
+        $destinations = @()
+        if ($UserDesktop -and (Test-Path -LiteralPath $UserDesktop)) {
+            $destinations += $UserDesktop
+        }
+        $userDesk = [Environment]::GetFolderPath('DesktopDirectory')
+        if ($userDesk -and (Test-Path -LiteralPath $userDesk)) {
+            $destinations += $userDesk
+        }
+        $publicDesk = [Environment]::GetFolderPath('CommonDesktopDirectory')
+        if ($publicDesk -and (Test-Path -LiteralPath $publicDesk)) {
+            $destinations += $publicDesk
+        }
+
+        foreach ($dir in ($destinations | Select-Object -Unique)) {
+            try {
+                $lnkPath = Join-Path $dir "$ShortcutName.lnk"
+                $shortcut = $wsh.CreateShortcut($lnkPath)
+                $shortcut.TargetPath = $TargetExe
+                $shortcut.WorkingDirectory = [System.IO.Path]::GetDirectoryName($TargetExe)
+                $shortcut.IconLocation = "$TargetExe,0"
+                $shortcut.Description = "$ShortcutName - Suporte Remoto"
+                $shortcut.Save()
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut)
+            } catch {}
+        }
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wsh)
+    } catch {}
+}
+
 try {
     # Validacao de Elevacao
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -280,6 +312,8 @@ try {
     }
 
     Write-Host "[2/5] HopToDesk instalado com sucesso!" -ForegroundColor Green
+    Create-DesktopShortcut -TargetExe $installedExe -ShortcutName 'HopToDesk' -UserDesktop $desktop
+    Write-Host "[2/5] Atalho na Area de Trabalho criado com sucesso!" -ForegroundColor Green
     Write-Host "[3/5] Iniciando servico de suporte do Windows..." -ForegroundColor Yellow
 
     # 4. Servico do Windows
@@ -376,6 +410,7 @@ Configurado em: $configuredAt
     }
 
     try { Set-Clipboard -Value $record } catch {}
+    Create-DesktopShortcut -TargetExe $installedExe -ShortcutName 'HopToDesk' -UserDesktop $desktop
     Start-Process -FilePath "$env:SystemRoot\System32\notepad.exe" -ArgumentList ('"' + $output + '"')
 
     Write-Host ""
