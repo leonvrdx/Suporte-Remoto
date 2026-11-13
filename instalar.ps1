@@ -162,6 +162,53 @@ function Create-DesktopShortcut([string]$TargetExe, [string]$ShortcutName = 'Hop
     } catch {}
 }
 
+function Set-TomlOption([string]$Content, [string]$Key, [string]$Value) {
+    if ($Content -match '(?m)^\[options\]') {
+        if ($Content -match "(?m)^$Key\s*=") {
+            return ($Content -replace "(?m)^$Key\s*=.*$", "$Key = '$Value'")
+        } else {
+            return ($Content -replace '(?m)^\[options\]', "[options]`r`n$Key = '$Value'")
+        }
+    } else {
+        return ($Content.TrimEnd() + "`r`n`r`n[options]`r`n$Key = '$Value'`r`n")
+    }
+}
+
+function Enable-HopToDeskUnattendedAccess {
+    try {
+        $targetPaths = @(
+            (Join-Path $env:APPDATA 'HopToDesk\config\HopToDesk2.toml'),
+            'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\HopToDesk\config\HopToDesk2.toml',
+            'C:\Windows\System32\config\systemprofile\AppData\Roaming\HopToDesk\config\HopToDesk2.toml'
+        )
+
+        $userProfiles = Get-ChildItem -Path 'C:\Users' -Directory -ErrorAction SilentlyContinue
+        foreach ($u in $userProfiles) {
+            $pToml = Join-Path $u.FullName 'AppData\Roaming\HopToDesk\config\HopToDesk2.toml'
+            $targetPaths += $pToml
+        }
+
+        foreach ($path in ($targetPaths | Select-Object -Unique)) {
+            try {
+                $dir = [IO.Path]::GetDirectoryName($path)
+                if (-not (Test-Path -LiteralPath $dir)) {
+                    [void][IO.Directory]::CreateDirectory($dir)
+                }
+
+                $content = ''
+                if (Test-Path -LiteralPath $path) {
+                    $content = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8)
+                }
+
+                $content = Set-TomlOption -Content $content -Key 'approve-mode' -Value 'password'
+                $content = Set-TomlOption -Content $content -Key 'allow-logon-screen-password' -Value 'Y'
+
+                [IO.File]::WriteAllText($path, $content, [Text.Encoding]::UTF8)
+            } catch {}
+        }
+    } catch {}
+}
+
 try {
     # Validacao de Elevacao
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -489,6 +536,16 @@ Configurado em: $configuredAt
     } catch {}
 
     Write-Host "[5/5] Senha permanente configurada com sucesso!" -ForegroundColor Green
+
+    # Habilita Acesso Nao Supervisionado (Fail-safe: nunca trava nem interrompe o instalador)
+    try {
+        Write-Host "[5/5] Ativando acesso nao supervisionado (conexao direta sem pop-up)..." -ForegroundColor Yellow
+        Enable-HopToDeskUnattendedAccess
+        Restart-Service -Name 'HopToDesk' -Force -ErrorAction SilentlyContinue
+        Write-Host "[5/5] Acesso nao supervisionado ativado com sucesso!" -ForegroundColor Green
+    } catch {
+        Write-Host "[Aviso] Nao foi possivel definir acesso nao supervisionado: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    }
 
     # 7. Disparo ao Webhook do Make.com (Apos geracao do arquivo txt)
     if ($WebhookUrl -match '^https?://') {
