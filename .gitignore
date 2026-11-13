@@ -1,0 +1,7 @@
+# Binarios compactados locais e temporarios
+*.rar
+*.zip
+*.old.exe
+*.log
+*.tmp
+*.pdb
