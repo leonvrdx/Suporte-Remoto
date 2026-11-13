@@ -2,6 +2,41 @@
 param([string]$DesktopOriginalBase64)
 
 $ErrorActionPreference = 'Stop'
+
+# Previne que cliques acidentais no terminal ativem o modo de selecao (QuickEdit) e pausem o script
+try {
+    $code = @'
+    using System;
+    using System.Runtime.InteropServices;
+    public class ConsoleHelper {
+        const int STD_INPUT_HANDLE = -10;
+        const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
+        const uint ENABLE_EXTENDED_FLAGS = 0x0080;
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern IntPtr GetStdHandle(int nStdHandle);
+        [DllImport("kernel32.dll")]
+        static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+        [DllImport("kernel32.dll")]
+        static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+        public static void DisableQuickEdit() {
+            try {
+                IntPtr handle = GetStdHandle(STD_INPUT_HANDLE);
+                uint mode;
+                if (GetConsoleMode(handle, out mode)) {
+                    mode &= ~ENABLE_QUICK_EDIT_MODE;
+                    mode |= ENABLE_EXTENDED_FLAGS;
+                    SetConsoleMode(handle, mode);
+                }
+            } catch {}
+        }
+    }
+'@
+    Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
+    [ConsoleHelper]::DisableQuickEdit()
+} catch {}
+
+try { [Console]::Title = "Instalador Suporte Remoto - HopToDesk" } catch {}
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic
@@ -76,8 +111,10 @@ function Invoke-RemoteApp([string]$ExePath, [string[]]$Arguments, [int]$TimeoutS
         return @{ ExitCode = -1; StdOut = ''; StdErr = 'Timeout'; Combined = 'Timeout' }
     }
 
-    $stdout = $stdoutTask.Result
-    $stderr = $stderrTask.Result
+    $stdout = ''
+    $stderr = ''
+    if ($stdoutTask.Wait(3000)) { $stdout = $stdoutTask.Result }
+    if ($stderrTask.Wait(3000)) { $stderr = $stderrTask.Result }
 
     return @{
         ExitCode = $process.ExitCode
@@ -307,38 +344,105 @@ try {
     $form.Close()
 
     Write-Host "[1/5] Download oficial concluido com sucesso!" -ForegroundColor Green
-    Write-Host "[2/5] Instalando HopToDesk silenciosamente em segundo plano..." -ForegroundColor Yellow
 
-    # 4. Instalacao Silenciosa do HopToDesk
-    $installProc = Start-Process -FilePath $installer -ArgumentList '--silent-install' -WindowStyle Hidden -PassThru
-    if (-not $installProc.WaitForExit(90000)) {
-        try { $installProc.Kill() } catch {}
-        throw 'A instalacao do HopToDesk demorou mais que o esperado.'
+    # 4. Instalacao Silenciosa do HopToDesk com Deteccao Inteligente de Instalacao Previa
+    $existingExe = Find-InstalledAppExe -AppName 'HopToDesk'
+    $shouldInstall = $true
+
+    if ($existingExe -and (Test-Path -LiteralPath $existingExe)) {
+        $existingVer = try { (Get-Item -LiteralPath $existingExe).VersionInfo.ProductVersion } catch { '' }
+        $msgVer = if ($existingVer) { " (Versao atual instalada: $existingVer)" } else { "" }
+        
+        $promptMsg = "Uma instalacao previa do HopToDesk ja foi localizada neste computador$msgVer.`r`n`r`n" +
+                     "Deseja realizar a reinstalacao/atualizacao por cima agora?`r`n`r`n" +
+                     "[Sim] - Reinstalar/Atualizar por cima automaticamente (Recomendado)`r`n" +
+                     "[Nao] - Manter versao atual e apenas reconfigurar o acesso remoto"
+                     
+        $choice = [System.Windows.Forms.MessageBox]::Show($promptMsg, 'HopToDesk - Instalacao Existente', 'YesNo', 'Question')
+        
+        if ($choice -eq [System.Windows.Forms.DialogResult]::Yes) {
+            Write-Host "[2/5] Encerrando processos e servico do HopToDesk para atualizar por cima..." -ForegroundColor Yellow
+            try {
+                Stop-Service -Name 'HopToDesk' -Force -ErrorAction SilentlyContinue
+                Get-Process -Name 'HopToDesk' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            } catch {}
+            Start-Sleep -Seconds 2
+            $shouldInstall = $true
+        } else {
+            Write-Host "[2/5] Mantendo instalacao existente do HopToDesk..." -ForegroundColor Green
+            $installedExe = $existingExe
+            $shouldInstall = $false
+        }
     }
 
-    Start-Sleep -Seconds 3
+    if ($shouldInstall) {
+        Write-Host "[2/5] Executando instalador do HopToDesk em segundo plano..." -ForegroundColor Yellow
+        $installProc = Start-Process -FilePath $installer -ArgumentList '--silent-install' -WindowStyle Hidden -PassThru
+        
+        $installedExe = $null
+        $installDeadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            if ($installProc.HasExited) { break }
+            $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
+            if ($installedExe) { break }
+            Start-Sleep -Seconds 2
+        } while ([DateTime]::UtcNow -lt $installDeadline)
 
-    $deadline = [DateTime]::UtcNow.AddSeconds(45)
-    $installedExe = $null
-    do {
-        $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
-        if ($installedExe) { break }
-        Start-Sleep -Seconds 2
-    } while ([DateTime]::UtcNow -lt $deadline)
+        if (-not $installProc.HasExited) {
+            try { $installProc.Kill() } catch {}
+        }
 
-    if (-not $installedExe) {
-        throw "O executavel do HopToDesk nao foi localizado nos diretorios de instalacao."
+        # Busca final do executavel
+        if (-not $installedExe) {
+            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            do {
+                $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
+                if ($installedExe) { break }
+                Start-Sleep -Seconds 1
+            } while ([DateTime]::UtcNow -lt $deadline)
+        }
+
+        # Fallback de Desinstalacao se a sobreposicao nao funcionou
+        if (-not $installedExe -and $existingExe -and (Test-Path -LiteralPath $existingExe)) {
+            $uninstMsg = "A reinstalacao por cima encontrou bloqueio de arquivos.`r`n`r`n" +
+                         "Deseja que o instalador execute a desinstalacao previa da versao antiga para instalar a versao atualizada de forma limpa?"
+            $uninstChoice = [System.Windows.Forms.MessageBox]::Show($uninstMsg, 'HopToDesk - Desinstalacao Previa Necessaria', 'YesNo', 'Warning')
+            
+            if ($uninstChoice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                Write-Host "[2/5] Realizando desinstalacao previa da versao antiga..." -ForegroundColor Yellow
+                try {
+                    $unProc = Start-Process -FilePath $existingExe -ArgumentList '--uninstall' -WindowStyle Hidden -PassThru
+                    [void]$unProc.WaitForExit(20000)
+                } catch {}
+                Start-Sleep -Seconds 3
+                
+                Write-Host "[2/5] Instalando nova versao limpa..." -ForegroundColor Yellow
+                $installProc2 = Start-Process -FilePath $installer -ArgumentList '--silent-install' -WindowStyle Hidden -PassThru
+                [void]$installProc2.WaitForExit(30000)
+                Start-Sleep -Seconds 2
+                
+                $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
+            }
+        }
+
+        if (-not $installedExe) {
+            throw "O executavel do HopToDesk nao foi localizado nos diretorios de instalacao."
+        }
+
+        Write-Host "[2/5] HopToDesk instalado com sucesso!" -ForegroundColor Green
     }
 
-    Write-Host "[2/5] HopToDesk instalado com sucesso!" -ForegroundColor Green
     Create-DesktopShortcut -TargetExe $installedExe -ShortcutName 'HopToDesk' -UserDesktop $desktop
-    Write-Host "[2/5] Atalho na Area de Trabalho criado com sucesso!" -ForegroundColor Green
+    Write-Host "[2/5] Atalho na Area de Trabalho configurado com sucesso!" -ForegroundColor Green
     Write-Host "[3/5] Iniciando servico de suporte do Windows..." -ForegroundColor Yellow
 
     # 5. Servico do Windows
     try {
         Set-Service -Name 'HopToDesk' -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service -Name 'HopToDesk' -ErrorAction SilentlyContinue
+        $svc = Get-Service -Name 'HopToDesk' -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -ne 'Running') {
+            Start-Service -Name 'HopToDesk' -ErrorAction SilentlyContinue
+        }
     } catch {}
 
     Write-Host "[3/5] Servico do Windows pronto!" -ForegroundColor Green
