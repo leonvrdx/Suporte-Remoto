@@ -14,10 +14,10 @@ $WebhookUrl = 'https://hook.us2.make.com/yeigsf1oq4t6v0i2ynpmqx2eswuhsbao'
 
 function Show-Info([string]$Message, [string]$Icon='Information') {
     $iconEnum = [System.Windows.Forms.MessageBoxIcon]::$Icon
-    [void][System.Windows.Forms.MessageBox]::Show($Message, 'Suporte Remoto', 'OK', $iconEnum)
+    [void][System.Windows.Forms.MessageBox]::Show($Message, 'Suporte Remoto - HopToDesk', 'OK', $iconEnum)
 }
 
-function Find-InstalledAppExe([string]$AppName) {
+function Find-InstalledAppExe([string]$AppName = 'HopToDesk') {
     $searchPaths = @(
         (Join-Path $env:ProgramFiles "$AppName\$AppName.exe"),
         (Join-Path $env:ProgramFiles "$AppName\$($AppName.ToLower()).exe"),
@@ -88,6 +88,7 @@ function Invoke-RemoteApp([string]$ExePath, [string[]]$Arguments, [int]$TimeoutS
 }
 
 function Get-RandomPassword {
+    # Caracteres alfanumericos inequivocos (sem simbolos e sem 0/O/1/l)
     $chars = '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ'
     return -join ((1..10) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
 }
@@ -104,107 +105,46 @@ try {
     $desktop = [Environment]::GetFolderPath('DesktopDirectory')
     if (-not $desktop) { $desktop = Join-Path $env:USERPROFILE 'Desktop' }
 
-    # 1. ESCOLHA DO SISTEMA DE SUPORTE
-    $choiceForm = New-Object System.Windows.Forms.Form
-    $choiceForm.Text = "Escolha a Ferramenta"
-    $choiceForm.Size = New-Object System.Drawing.Size(350, 170)
-    $choiceForm.StartPosition = "CenterScreen"
-    $choiceForm.FormBorderStyle = "FixedDialog"
-    $choiceForm.MaximizeBox = $false
-    $choiceForm.MinimizeBox = $false
-    $choiceForm.TopMost = $true
-
-    $lblQuestion = New-Object System.Windows.Forms.Label
-    $lblQuestion.Location = New-Object System.Drawing.Point(15, 15)
-    $lblQuestion.Size = New-Object System.Drawing.Size(305, 20)
-    $lblQuestion.Text = "Qual ferramenta de suporte remoto deseja instalar?"
-
-    $script:selectedApp = $null
-
-    $btnRustDesk = New-Object System.Windows.Forms.Button
-    $btnRustDesk.Location = New-Object System.Drawing.Point(15, 42)
-    $btnRustDesk.Size = New-Object System.Drawing.Size(305, 32)
-    $btnRustDesk.Text = "RustDesk (Recomendado)"
-    $btnRustDesk.Add_Click({
-        $script:selectedApp = 'RustDesk'
-        $choiceForm.Close()
-    })
-
-    $btnHopToDesk = New-Object System.Windows.Forms.Button
-    $btnHopToDesk.Location = New-Object System.Drawing.Point(15, 80)
-    $btnHopToDesk.Size = New-Object System.Drawing.Size(305, 32)
-    $btnHopToDesk.Text = "HopToDesk (Alternativo Open-Source)"
-    $btnHopToDesk.Add_Click({
-        $script:selectedApp = 'HopToDesk'
-        $choiceForm.Close()
-    })
-
-    $choiceForm.Controls.Add($lblQuestion)
-    $choiceForm.Controls.Add($btnRustDesk)
-    $choiceForm.Controls.Add($btnHopToDesk)
-
-    $choiceForm.ShowDialog() | Out-Null
-    $choiceForm.Dispose()
-
-    if (-not $script:selectedApp) { exit 0 }
-
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
 
-    if ($script:selectedApp -eq 'RustDesk') {
-        $rustUrls = [System.Collections.Generic.List[string]]::new()
-        try {
-            $apiHeaders = @{
-                'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                'Accept' = 'application/vnd.github+json'
-            }
-            $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/rustdesk/rustdesk/releases/latest' -Headers $apiHeaders -TimeoutSec 10 -ErrorAction Stop
-            $assets = @($rel.assets | Where-Object { $_.name -match '(?i)rustdesk-.*-x86_64\.exe$' })
-            if ($assets.Count -gt 0) {
-                $rustUrls.Add($assets[0].browser_download_url)
-            }
-        } catch { }
-
-        $rustUrls.Add('https://github.com/rustdesk/rustdesk/releases/download/1.5.3/rustdesk-1.5.3-x86_64.exe')
-        
-        $script:AppConfig = @{
-            Name = 'RustDesk'
-            DownloadUrls = $rustUrls
-            ServiceName = 'RustDesk'
-        }
-    } else {
-        $script:AppConfig = @{
-            Name = 'HopToDesk'
-            DownloadUrls = @(
-                'https://dl.hoptodesk.com/HopToDesk64.exe',
-                'https://dl.hoptodesk.com/HopToDesk.exe',
-                'https://download.hoptodesk.com/HopToDesk.exe'
-            )
-            ServiceName = 'HopToDesk'
-        }
+    # Configuracao oficial e resiliente do HopToDesk
+    $script:AppConfig = @{
+        Name = 'HopToDesk'
+        DownloadUrls = @(
+            'https://dl.hoptodesk.com/HopToDesk64.exe',
+            'https://dl.hoptodesk.com/HopToDesk.exe',
+            'https://download.hoptodesk.com/HopToDesk.exe',
+            'https://data.hoptodesk.com/HopToDesk.exe'
+        )
+        ServiceName = 'HopToDesk'
     }
 
-    # 2. Coleta de Dados do Parceiro
-    $partner = [Microsoft.VisualBasic.Interaction]::InputBox('Informe o nome do parceiro (ex.: Rango). Cancelar ou deixar vazio encerra a instalacao.', "Suporte Remoto $($script:AppConfig.Name) - Parceiro", '')
+    # 1. Coleta de Dados do Parceiro / Loja
+    $partner = [Microsoft.VisualBasic.Interaction]::InputBox('Informe o nome do parceiro ou loja (ex.: Rango). Cancelar ou deixar vazio encerra a instalacao.', "Suporte Remoto HopToDesk - Parceiro", '')
     if ([string]::IsNullOrWhiteSpace($partner)) { exit 0 }
     $partner = $partner.Trim()
 
-    $label = [Microsoft.VisualBasic.Interaction]::InputBox('Identificacao do computador para o suporte.', "Suporte Remoto $($script:AppConfig.Name) - Computador", $env:COMPUTERNAME)
+    $label = [Microsoft.VisualBasic.Interaction]::InputBox('Identificacao do computador para o suporte (ex.: Caixa 01, Servidor, Balcao).', "Suporte Remoto HopToDesk - Computador", $env:COMPUTERNAME)
     if ([string]::IsNullOrWhiteSpace($label)) { exit 0 }
     $label = $label.Trim()
+
+    if ($partner.Length -gt 100 -or $label.Length -gt 100 -or ($partner + $label) -match '[\r\n\x00-\x1f]') {
+        throw 'Use nomes com ate 100 caracteres, sem quebras de linha.'
+    }
 
     $safePartner = [regex]::Replace($partner, '[\\/:\*\?\"<>\|]', '').Trim()
     if (-not $safePartner) { $safePartner = 'Parceiro' }
 
-    $output = Join-Path $desktop ("$($script:AppConfig.Name) Dados - {0}.txt" -f $safePartner)
+    $output = Join-Path $desktop ("HopToDesk Dados - {0}.txt" -f $safePartner)
     $utf8 = New-Object Text.UTF8Encoding($true)
 
-    # 3. Download com Progresso
-    $downloadFolder = Join-Path $env:TEMP ("Suporte-$($script:AppConfig.Name)-" + [guid]::NewGuid().ToString('N'))
+    # 2. Download Oficial do HopToDesk com Interface de Progresso
+    $downloadFolder = Join-Path $env:TEMP ("Suporte-HopToDesk-" + [guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($downloadFolder)
-    $installer = Join-Path $downloadFolder "$($script:AppConfig.Name).exe"
+    $installer = Join-Path $downloadFolder "HopToDesk.exe"
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Suporte Remoto $($script:AppConfig.Name)"
+    $form.Text = "Suporte Remoto HopToDesk"
     $form.Size = New-Object System.Drawing.Size(420, 140)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
@@ -215,7 +155,7 @@ try {
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Location = New-Object System.Drawing.Point(20, 20)
     $lbl.Size = New-Object System.Drawing.Size(365, 20)
-    $lbl.Text = "Conectando ao servidor oficial..."
+    $lbl.Text = "Conectando ao servidor oficial do HopToDesk..."
 
     $prg = New-Object System.Windows.Forms.ProgressBar
     $prg.Location = New-Object System.Drawing.Point(20, 48)
@@ -229,6 +169,13 @@ try {
     $form.Show()
     [System.Windows.Forms.Application]::DoEvents()
 
+    Write-Host ""
+    Write-Host "==========================================================" -ForegroundColor Cyan
+    Write-Host "  Instalador de Suporte Remoto (HopToDesk Oficial)" -ForegroundColor Cyan
+    Write-Host "  Parceiro: $partner | Computador: $label" -ForegroundColor Gray
+    Write-Host "==========================================================" -ForegroundColor Cyan
+    Write-Host "[1/5] Conectando aos servidores oficiais do HopToDesk..." -ForegroundColor Yellow
+
     $downloadSuccess = $false
     $lastDownloadError = ''
 
@@ -237,7 +184,7 @@ try {
         $fs = $null; $stream = $null; $res = $null
 
         try {
-            $lbl.Text = "Conectando ao servidor..."
+            $lbl.Text = "Conectando ao servidor oficial..."
             [System.Windows.Forms.Application]::DoEvents()
 
             $req = [System.Net.HttpWebRequest]::Create([uri]$url)
@@ -257,17 +204,16 @@ try {
                 if ($read -gt 0) {
                     $fs.Write($buffer, 0, $read)
                     $downloaded += $read
-
                     if ($totalBytes -gt 0) {
                         $pct = [math]::Min(100, [math]::Floor(($downloaded / $totalBytes) * 100))
                         $mbIn = [math]::Round($downloaded / 1MB, 2)
                         $mbTot = [math]::Round($totalBytes / 1MB, 2)
-                        $lbl.Text = "Baixando instalador: $mbIn MB de $mbTot MB ($pct%)"
+                        $lbl.Text = "Baixando HopToDesk: $mbIn MB de $mbTot MB ($pct%)"
                         $prg.Style = 'Blocks'
                         $prg.Value = $pct
                     } else {
                         $mbIn = [math]::Round($downloaded / 1MB, 2)
-                        $lbl.Text = "Baixando instalador: $mbIn MB..."
+                        $lbl.Text = "Baixando HopToDesk: $mbIn MB..."
                         $prg.Style = 'Marquee'
                     }
                 }
@@ -300,7 +246,7 @@ try {
 
     if (-not $downloadSuccess) {
         $form.Close()
-        throw "Nao foi possivel baixar o instalador de nenhuma das fontes disponiveis. Detalhe: $lastDownloadError"
+        throw "Nao foi possivel baixar o HopToDesk de nenhuma das fontes oficiais. Detalhe: $lastDownloadError"
     }
 
     $lbl.Text = "Download concluido! Iniciando instalacao..."
@@ -309,19 +255,14 @@ try {
     Start-Sleep -Seconds 1
     $form.Close()
 
-    Write-Host ""
-    Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "  Iniciando configuracao do $($script:AppConfig.Name)" -ForegroundColor Cyan
-    Write-Host "  Parceiro: $partner | Computador: $label" -ForegroundColor Gray
-    Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host "[1/5] Download oficial concluido com sucesso!" -ForegroundColor Green
-    Write-Host "[2/5] Instalando silenciosamente em segundo plano..." -ForegroundColor Yellow
+    Write-Host "[2/5] Instalando HopToDesk silenciosamente em segundo plano..." -ForegroundColor Yellow
 
-    # 4. Instalacao Silenciosa
+    # 3. Instalacao Silenciosa do HopToDesk
     $installProc = Start-Process -FilePath $installer -ArgumentList '--silent-install' -WindowStyle Hidden -PassThru
     if (-not $installProc.WaitForExit(90000)) {
         try { $installProc.Kill() } catch {}
-        throw 'A instalacao demorou mais que o esperado.'
+        throw 'A instalacao do HopToDesk demorou mais que o esperado.'
     }
 
     Start-Sleep -Seconds 3
@@ -329,33 +270,34 @@ try {
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
     $installedExe = $null
     do {
-        $installedExe = Find-InstalledAppExe -AppName $script:AppConfig.Name
+        $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
         if ($installedExe) { break }
         Start-Sleep -Seconds 2
     } while ([DateTime]::UtcNow -lt $deadline)
 
     if (-not $installedExe) {
-        throw "O executavel do $($script:AppConfig.Name) nao foi localizado nos diretorios esperados de instalacao."
+        throw "O executavel do HopToDesk nao foi localizado nos diretorios de instalacao."
     }
 
-    Write-Host "[2/5] Aplicativo instalado com sucesso!" -ForegroundColor Green
-    Write-Host "[3/5] Iniciando servico do Windows..." -ForegroundColor Yellow
+    Write-Host "[2/5] HopToDesk instalado com sucesso!" -ForegroundColor Green
+    Write-Host "[3/5] Iniciando servico de suporte do Windows..." -ForegroundColor Yellow
 
+    # 4. Servico do Windows
     try {
-        Set-Service -Name $script:AppConfig.ServiceName -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service -Name $script:AppConfig.ServiceName -ErrorAction SilentlyContinue
+        Set-Service -Name 'HopToDesk' -StartupType Automatic -ErrorAction SilentlyContinue
+        Start-Service -Name 'HopToDesk' -ErrorAction SilentlyContinue
     } catch {}
 
     Write-Host "[3/5] Servico do Windows pronto!" -ForegroundColor Green
     Write-Host "[4/5] Conectando a rede para gerar o ID de acesso..." -ForegroundColor Yellow
 
-    # 5. Obtencao do ID
+    # 5. Obtencao do ID de Acesso
     $remoteId = ''
     $maxAttempts = 3
 
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         if ($attempt -gt 1) {
-            try { Restart-Service -Name $script:AppConfig.ServiceName -Force -ErrorAction SilentlyContinue } catch {}
+            try { Restart-Service -Name 'HopToDesk' -Force -ErrorAction SilentlyContinue } catch {}
             Start-Sleep -Seconds 4
         }
 
@@ -379,7 +321,7 @@ try {
     }
 
     if (-not $remoteId) {
-        $errorRecord = "ACESSO REMOTO - $($script:AppConfig.Name)`r`n`r`nParceiro: $partner`r`nComputador: $label`r`nSTATUS: Abra o $($script:AppConfig.Name) para consultar o ID."
+        $errorRecord = "ACESSO REMOTO - HopToDesk`r`n`r`nParceiro: $partner`r`nComputador: $label`r`nSTATUS: Abra o HopToDesk para consultar o ID na tela."
         [IO.File]::WriteAllText($output, $errorRecord, $utf8)
         Start-Process -FilePath "$env:SystemRoot\System32\notepad.exe" -ArgumentList ('"' + $output + '"')
         Remove-Item -LiteralPath $downloadFolder -Recurse -Force -ErrorAction SilentlyContinue
@@ -387,12 +329,12 @@ try {
     }
 
     Write-Host "[4/5] ID gerado com sucesso: $remoteId" -ForegroundColor Green
-    Write-Host "[5/5] Configurando senha permanente e permissoes de seguranca..." -ForegroundColor Yellow
+    Write-Host "[5/5] Configurando senha permanente de acesso..." -ForegroundColor Yellow
 
     $password = Get-RandomPassword
     $configuredAt = Get-Date -Format 'dd/MM/yyyy HH:mm:ss zzz'
     $record = @"
-ACESSO REMOTO - $($script:AppConfig.Name)
+ACESSO REMOTO - HopToDesk
 
 Parceiro: $partner
 Computador: $label
@@ -403,22 +345,20 @@ Configurado em: $configuredAt
 "@
     [IO.File]::WriteAllText($output, $record, $utf8)
 
-    # Configuracao de opcoes e senha
+    # 6. Configuracao de Senha Permanente no HopToDesk
     try {
-        $null = Invoke-RemoteApp -ExePath $installedExe -Arguments @('--option', 'verification-method', 'both') -TimeoutSeconds 5
-        $null = Invoke-RemoteApp -ExePath $installedExe -Arguments @('--option', 'allow-remote-config-modification', 'Y') -TimeoutSeconds 5
-        $null = Invoke-RemoteApp -ExePath $installedExe -Arguments @('--password', $password) -TimeoutSeconds 5
+        $null = Invoke-RemoteApp -ExePath $installedExe -Arguments @('--password', $password) -TimeoutSeconds 6
     } catch {}
 
     Write-Host "[5/5] Senha permanente configurada com sucesso!" -ForegroundColor Green
 
-    # Disparo assincrono ao Make.com
+    # 7. Disparo Assincrono ao Make.com
     if ($WebhookUrl -match '^https://') {
         try {
             $payload = @{
-                ferramenta = $script:AppConfig.Name
-                aplicativo = $script:AppConfig.Name
-                app = $script:AppConfig.Name
+                ferramenta = 'HopToDesk'
+                aplicativo = 'HopToDesk'
+                app = 'HopToDesk'
                 parceiro = $partner
                 computador = $label
                 id = $remoteId
@@ -447,7 +387,7 @@ Configurado em: $configuredAt
     Write-Host "==========================================================" -ForegroundColor Green
     Write-Host ""
 
-    Show-Info "Configuracao concluida com sucesso!`r`n`r`nOs dados foram copiados para a Area de Transferencia e abertos no Bloco de Notas." "Information"
+    Show-Info "Configuracao do HopToDesk concluida com sucesso!`r`n`r`nOs dados foram copiados para a Area de Transferencia e abertos no Bloco de Notas." "Information"
 
     Remove-Item -LiteralPath $downloadFolder -Recurse -Force -ErrorAction SilentlyContinue
     exit 0
