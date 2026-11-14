@@ -163,6 +163,7 @@ function Create-DesktopShortcut([string]$TargetExe, [string]$ShortcutName = 'Hop
 }
 
 function Set-TomlOption([string]$Content, [string]$Key, [string]$Value) {
+    $Content = $Content.TrimStart([char]0xFEFF)
     if ($Content -match '(?m)^\[options\]') {
         if ($Content -match "(?m)^$Key\s*=") {
             return ($Content -replace "(?m)^$Key\s*=.*$", "$Key = '$Value'")
@@ -176,46 +177,101 @@ function Set-TomlOption([string]$Content, [string]$Key, [string]$Value) {
 
 function Enable-HopToDeskUnattendedAccess {
     try {
-        $targetPaths = @(
-            (Join-Path $env:APPDATA 'HopToDesk\config\HopToDesk2.toml'),
-            'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\HopToDesk\config\HopToDesk2.toml',
-            'C:\Windows\System32\config\systemprofile\AppData\Roaming\HopToDesk\config\HopToDesk2.toml'
+        # UTF-8 sem BOM (obrigatorio para o parser TOML em Rust do HopToDesk nao resetar o arquivo)
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+        $configDirs = @(
+            (Join-Path $env:APPDATA 'HopToDesk\config'),
+            'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\HopToDesk\config',
+            'C:\Windows\System32\config\systemprofile\AppData\Roaming\HopToDesk\config'
         )
 
         $userProfiles = Get-ChildItem -Path 'C:\Users' -Directory -ErrorAction SilentlyContinue
         foreach ($u in $userProfiles) {
-            $pToml = Join-Path $u.FullName 'AppData\Roaming\HopToDesk\config\HopToDesk2.toml'
-            $targetPaths += $pToml
+            $configDirs += (Join-Path $u.FullName 'AppData\Roaming\HopToDesk\config')
+        }
+        $configDirs = $configDirs | Select-Object -Unique
+
+        # Localiza o HopToDesk.toml principal (que contem o ID e a permanent_password recem-gerada)
+        $sourceToml1Content = $null
+        foreach ($dir in $configDirs) {
+            $t1 = Join-Path $dir 'HopToDesk.toml'
+            if (Test-Path -LiteralPath $t1) {
+                try {
+                    $raw = [IO.File]::ReadAllText($t1, $utf8NoBom).TrimStart([char]0xFEFF)
+                    if ($raw -match "(?m)^permanent_password\s*=\s*'[^']+'" -and $raw -match "(?m)^enc_id\s*=\s*'[^']+'") {
+                        $sourceToml1Content = $raw
+                        break
+                    }
+                } catch {}
+            }
         }
 
-        foreach ($path in ($targetPaths | Select-Object -Unique)) {
+        if ($sourceToml1Content) {
+            # Garante temporary_password vazio para ativar o modo Acesso Nao Supervisionado na UI do HopToDesk
+            if ($sourceToml1Content -match '(?m)^temporary_password\s*=') {
+                $sourceToml1Content = $sourceToml1Content -replace "(?m)^temporary_password\s*=.*$", "temporary_password = ''"
+            } else {
+                $sourceToml1Content = "temporary_password = ''`r`n" + $sourceToml1Content
+            }
+        }
+
+        foreach ($dir in $configDirs) {
             try {
-                $dir = [IO.Path]::GetDirectoryName($path)
                 if (-not (Test-Path -LiteralPath $dir)) {
                     [void][IO.Directory]::CreateDirectory($dir)
                 }
 
-                $content = ''
-                if (Test-Path -LiteralPath $path) {
-                    $content = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8)
+                # 1. Sincroniza HopToDesk.toml (ID + permanent_password + temporary_password = '')
+                $pathToml1 = Join-Path $dir 'HopToDesk.toml'
+                if ($sourceToml1Content) {
+                    [IO.File]::WriteAllText($pathToml1, $sourceToml1Content, $utf8NoBom)
+                } elseif (Test-Path -LiteralPath $pathToml1) {
+                    $c1 = [IO.File]::ReadAllText($pathToml1, $utf8NoBom).TrimStart([char]0xFEFF)
+                    if ($c1 -match '(?m)^temporary_password\s*=') {
+                        $c1 = $c1 -replace "(?m)^temporary_password\s*=.*$", "temporary_password = ''"
+                        [IO.File]::WriteAllText($pathToml1, $c1, $utf8NoBom)
+                    }
                 }
 
-                $content = Set-TomlOption -Content $content -Key 'approve-mode' -Value 'password'
-                $content = Set-TomlOption -Content $content -Key 'allow-logon-screen-password' -Value 'Y'
+                # 2. Configura HopToDesk2.toml sem BOM com acesso direto via senha permanente
+                $pathToml2 = Join-Path $dir 'HopToDesk2.toml'
+                $content2 = ''
+                if (Test-Path -LiteralPath $pathToml2) {
+                    $content2 = [IO.File]::ReadAllText($pathToml2, $utf8NoBom).TrimStart([char]0xFEFF)
+                }
 
-                [IO.File]::WriteAllText($path, $content, [Text.Encoding]::UTF8)
+                $content2 = Set-TomlOption -Content $content2 -Key 'approve-mode' -Value 'password'
+                $content2 = Set-TomlOption -Content $content2 -Key 'verification-method' -Value 'use-permanent-password'
+                $content2 = Set-TomlOption -Content $content2 -Key 'allow-logon-screen-password' -Value 'Y'
+
+                [IO.File]::WriteAllText($pathToml2, $content2, $utf8NoBom)
             } catch {}
         }
     } catch {}
 }
 
+function Start-HopToDeskGui([string]$ExePath) {
+    if (-not $ExePath -or -not (Test-Path -LiteralPath $ExePath)) { return }
+    try {
+        $workDir = [IO.Path]::GetDirectoryName($ExePath)
+        Start-Process -FilePath $ExePath -WorkingDirectory $workDir -WindowStyle Normal -ErrorAction SilentlyContinue
+    } catch {}
+}
+
 try {
-    # Validacao de Elevacao
+    # Validacao de Elevacao (com auto-elevacao automatica via UAC caso executado sem Admin)
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Show-Info "Por favor, abra o PowerShell como Administrador para executar este comando." "Warning"
-        exit 1
+        try {
+            $elevatedCmd = "irm 'https://raw.githubusercontent.com/leonvrdx/Suporte-Remoto/main/instalar.ps1' | iex"
+            Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @('-NoLogo', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', $elevatedCmd) -Verb RunAs -Wait
+            exit 0
+        } catch {
+            Show-Info "Por favor, abra o PowerShell como Administrador para executar este comando." "Warning"
+            exit 1
+        }
     }
 
     $desktop = [Environment]::GetFolderPath('DesktopDirectory')
@@ -407,20 +463,14 @@ try {
         Write-Host "[2/5] Executando instalador do HopToDesk em segundo plano..." -ForegroundColor Yellow
         $installProc = Start-Process -FilePath $installer -ArgumentList '--silent-install' -WindowStyle Hidden -PassThru
         
-        $installedExe = $null
-        $installDeadline = [DateTime]::UtcNow.AddSeconds(30)
-        do {
-            if ($installProc.HasExited) { break }
-            $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
-            if ($installedExe) { break }
-            Start-Sleep -Seconds 2
-        } while ([DateTime]::UtcNow -lt $installDeadline)
-
+        # Aguarda o termino natural do instalador (sem mata-lo prematuramente ao detectar o binario na pasta)
+        [void]$installProc.WaitForExit(40000)
         if (-not $installProc.HasExited) {
             try { $installProc.Kill() } catch {}
         }
+        Start-Sleep -Seconds 2
 
-        # Busca final do executavel
+        $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
         if (-not $installedExe) {
             $deadline = [DateTime]::UtcNow.AddSeconds(15)
             do {
@@ -446,7 +496,7 @@ try {
                 
                 Write-Host "[2/5] Instalando nova versao limpa..." -ForegroundColor Yellow
                 $installProc2 = Start-Process -FilePath $installer -ArgumentList '--silent-install' -WindowStyle Hidden -PassThru
-                [void]$installProc2.WaitForExit(30000)
+                [void]$installProc2.WaitForExit(40000)
                 Start-Sleep -Seconds 2
                 
                 $installedExe = Find-InstalledAppExe -AppName 'HopToDesk'
@@ -508,6 +558,7 @@ try {
     if (-not $remoteId) {
         $errorRecord = "ACESSO REMOTO - HopToDesk`r`n`r`nParceiro: $partner`r`nComputador: $label`r`nSTATUS: Abra o HopToDesk para consultar o ID na tela."
         [IO.File]::WriteAllText($output, $errorRecord, $utf8)
+        Start-HopToDeskGui -ExePath $installedExe
         Start-Process -FilePath "$env:SystemRoot\System32\notepad.exe" -ArgumentList ('"' + $output + '"')
         Remove-Item -LiteralPath $downloadFolder -Recurse -Force -ErrorAction SilentlyContinue
         exit 1
@@ -537,17 +588,28 @@ Configurado em: $configuredAt
 
     Write-Host "[5/5] Senha permanente configurada com sucesso!" -ForegroundColor Green
 
-    # Habilita Acesso Nao Supervisionado (Fail-safe: nunca trava nem interrompe o instalador)
+    # 7. Habilita Acesso Nao Supervisionado (Para o servico antes de gravar TOML sem BOM para evitar sobrescrita IPC)
     try {
         Write-Host "[5/5] Ativando acesso nao supervisionado (conexao direta sem pop-up)..." -ForegroundColor Yellow
+        try {
+            Stop-Service -Name 'HopToDesk' -Force -ErrorAction SilentlyContinue
+            Get-Process -Name 'HopToDesk' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        } catch {}
+        Start-Sleep -Seconds 1
+
         Enable-HopToDeskUnattendedAccess
-        Restart-Service -Name 'HopToDesk' -Force -ErrorAction SilentlyContinue
+
+        try {
+            Start-Service -Name 'HopToDesk' -ErrorAction SilentlyContinue
+        } catch {}
+        Start-Sleep -Seconds 2
         Write-Host "[5/5] Acesso nao supervisionado ativado com sucesso!" -ForegroundColor Green
     } catch {
         Write-Host "[Aviso] Nao foi possivel definir acesso nao supervisionado: $($_.Exception.Message)" -ForegroundColor DarkYellow
+        try { Start-Service -Name 'HopToDesk' -ErrorAction SilentlyContinue } catch {}
     }
 
-    # 7. Disparo ao Webhook do Make.com (Apos geracao do arquivo txt)
+    # 8. Disparo ao Webhook do Make.com (Apos geracao do arquivo txt)
     if ($WebhookUrl -match '^https?://') {
         Write-Host "[5/5] Notificando integracao no Make.com..." -ForegroundColor Yellow
         try {
@@ -572,6 +634,10 @@ Configurado em: $configuredAt
 
     try { Set-Clipboard -Value $record } catch {}
     Create-DesktopShortcut -TargetExe $installedExe -ShortcutName 'HopToDesk' -UserDesktop $desktop
+
+    # Abre a interface do HopToDesk e o Bloco de Notas com os dados gerados
+    Write-Host "[5/5] Abrindo interface do HopToDesk e relatorio..." -ForegroundColor Yellow
+    Start-HopToDeskGui -ExePath $installedExe
     Start-Process -FilePath "$env:SystemRoot\System32\notepad.exe" -ArgumentList ('"' + $output + '"')
 
     Write-Host ""
@@ -583,7 +649,7 @@ Configurado em: $configuredAt
     Write-Host "==========================================================" -ForegroundColor Green
     Write-Host ""
 
-    Show-Info "Configuracao do HopToDesk concluida com sucesso!`r`n`r`nOs dados foram copiados para a Area de Transferencia e abertos no Bloco de Notas." "Information"
+    Show-Info "Configuracao do HopToDesk concluida com sucesso!`r`n`r`nO aplicativo HopToDesk e o Bloco de Notas foram abertos com os dados de acesso." "Information"
 
     Remove-Item -LiteralPath $downloadFolder -Recurse -Force -ErrorAction SilentlyContinue
     exit 0
