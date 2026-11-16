@@ -30,6 +30,7 @@ Para enviar o instalador pronto para o cliente ou operador de suporte:
 * **Zero Erro 404**: Download direto oficial dos servidores CDN do HopToDesk com fallbacks automáticos em cascata.
 * **Compatibilidade 32 e 64 bits**: Detecção dinâmica de instalação e suporte a arquiteturas Windows.
 * **Acesso Não Supervisionado Automático**: Conexão remota direta e instantânea por senha permanente, sem exibir card ou pop-up de confirmação na tela da loja.
+* **Permissões Máximas (Full Access)**: Teclado/mouse, área de transferência, transferência de arquivos, áudio, terminal, câmera, impressora remota, túnel TCP, reinicialização remota, gravação de sessão e bloqueio de entrada já vêm liberados por padrão para o técnico.
 * **Segurança e Senhas Fortes**: Senha permanente alfanumérica inequívoca (sem caracteres que causam conflito em linha de comando) e ativação de acesso não supervisionado.
 * **Feedback em Tempo Real**: Progresso narrado passo a passo `[1/5]..[5/5]` na tela do terminal e barra visual de download.
 * **Integração Make.com**: Notificação assíncrona automática com envio dos dados (`ferramenta`, `aplicativo`, `app`, `parceiro`, `computador`, `id`, `senha`, `textoCompleto`).

@@ -245,6 +245,29 @@ function Enable-HopToDeskUnattendedAccess {
                 $content2 = Set-TomlOption -Content $content2 -Key 'verification-method' -Value 'use-permanent-password'
                 $content2 = Set-TomlOption -Content $content2 -Key 'allow-logon-screen-password' -Value 'Y'
 
+                # Liga o toggle "Acesso Nao Supervisionado" por padrao (mantem a senha permanente ativa)
+                $content2 = Set-TomlOption -Content $content2 -Key 'unattended-access' -Value 'true'
+
+                # Permissoes maximas para quem conecta (equivale a "Full Access" na UI)
+                $permOptions = @(
+                    @{ key = 'access-mode';                      value = 'full' }
+                    @{ key = 'enable-keyboard';                  value = 'Y' }
+                    @{ key = 'enable-clipboard';                 value = 'Y' }
+                    @{ key = 'enable-file-transfer';             value = 'Y' }
+                    @{ key = 'enable-camera';                    value = 'Y' }
+                    @{ key = 'enable-terminal';                  value = 'Y' }
+                    @{ key = 'enable-remote-printer';            value = 'Y' }
+                    @{ key = 'enable-audio';                     value = 'Y' }
+                    @{ key = 'enable-tunnel';                    value = 'Y' }
+                    @{ key = 'enable-remote-restart';            value = 'Y' }
+                    @{ key = 'enable-record-session';            value = 'Y' }
+                    @{ key = 'enable-block-input';               value = 'Y' }
+                    @{ key = 'allow-remote-config-modification'; value = 'Y' }
+                )
+                foreach ($opt in $permOptions) {
+                    $content2 = Set-TomlOption -Content $content2 -Key $opt.key -Value $opt.value
+                }
+
                 [IO.File]::WriteAllText($pathToml2, $content2, $utf8NoBom)
             } catch {}
         }
